@@ -1,0 +1,565 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Stand Ledger</title>
+<style>
+  /* Layout: a cash-box ledger — top summary band (two money columns + total),
+     then partners & their shares, then a running log of sales and expenses. */
+  :root {
+    --paper: #fdfaf3;
+    --ink: #2a2520;
+    --muted: #8a7f6f;
+    --line: #e4dcc9;
+    --card: #fffdf7;
+    --lemon: #e8b000;
+    --lemon-deep: #c38a00;
+    --mint: #3f9e7c;
+    --berry: #c0504a;
+    --chip: #f3ecd9;
+    --shadow: 0 1px 2px rgba(80,60,20,.08), 0 6px 16px rgba(80,60,20,.06);
+    --radius: 14px;
+    --f-display: "Fraunces", Georgia, "Times New Roman", serif;
+    --f-body: "Inter", system-ui, -apple-system, sans-serif;
+    --f-num: "Inter", ui-monospace, monospace;
+    color-scheme: light;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --paper: #211d18;
+      --ink: #f2ebdc;
+      --muted: #a99d88;
+      --line: #3a342b;
+      --card: #2a251e;
+      --lemon: #f0c23a;
+      --lemon-deep: #f0c23a;
+      --mint: #5bbf9a;
+      --berry: #e0756e;
+      --chip: #332d24;
+      --shadow: 0 1px 2px rgba(0,0,0,.3), 0 6px 18px rgba(0,0,0,.35);
+      color-scheme: dark;
+    }
+  }
+  :root[data-theme="dark"] {
+    --paper: #211d18;
+    --ink: #f2ebdc;
+    --muted: #a99d88;
+    --line: #3a342b;
+    --card: #2a251e;
+    --lemon: #f0c23a;
+    --lemon-deep: #f0c23a;
+    --mint: #5bbf9a;
+    --berry: #e0756e;
+    --chip: #332d24;
+    --shadow: 0 1px 2px rgba(0,0,0,.3), 0 6px 18px rgba(0,0,0,.35);
+    color-scheme: dark;
+  }
+
+  * { box-sizing: border-box; }
+  html, body { margin: 0; }
+  body {
+    background: var(--paper);
+    color: var(--ink);
+    font-family: var(--f-body);
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+  }
+  .wrap {
+    max-width: 720px;
+    margin: 0 auto;
+    padding-left: max(16px, env(safe-area-inset-left, 0px));
+    padding-right: max(16px, env(safe-area-inset-right, 0px));
+    padding-block: 28px 56px;
+  }
+  .tnum { font-variant-numeric: tabular-nums; font-family: var(--f-num); }
+
+  header { margin-bottom: 22px; }
+  .eyebrow {
+    font-size: 11px; letter-spacing: .14em; text-transform: uppercase;
+    color: var(--lemon-deep); font-weight: 600; margin: 0 0 4px;
+  }
+  h1 {
+    font-family: var(--f-display);
+    font-weight: 600;
+    font-size: clamp(30px, 7vw, 42px);
+    line-height: 1.02;
+    margin: 0;
+    text-wrap: balance;
+    letter-spacing: -.01em;
+  }
+  .biz-name { color: var(--lemon-deep); }
+  .tagline { color: var(--muted); font-size: 14px; margin: 6px 0 0; }
+
+  .totals {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+    margin: 20px 0 10px;
+  }
+  .tile {
+    background: var(--card);
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    padding: 14px 16px;
+    box-shadow: var(--shadow);
+  }
+  .tile.grand {
+    grid-column: 1 / -1;
+    background: linear-gradient(135deg, var(--lemon) 0%, var(--lemon-deep) 100%);
+    border: none;
+    color: #231c00;
+  }
+  .tile .label {
+    font-size: 11px; letter-spacing: .08em; text-transform: uppercase;
+    font-weight: 600; opacity: .8; margin: 0 0 2px;
+    display: flex; align-items: center; gap: 6px;
+  }
+  .tile .val { font-size: 26px; font-weight: 700; }
+  .tile.grand .val { font-size: 34px; }
+  .tile.split {
+    grid-column: 1 / -1;
+    border: 1.5px solid var(--mint);
+    background: color-mix(in srgb, var(--mint) 8%, var(--card));
+  }
+  .tile.split .label { color: var(--mint); opacity: 1; }
+  .tile.split .val { color: var(--mint); }
+  .tile .sub { font-size: 12px; opacity: .72; margin-top: 2px; }
+  .dot { width: 9px; height: 9px; border-radius: 50%; display: inline-block; }
+  .dot.cash { background: var(--mint); }
+  .dot.digital { background: var(--lemon-deep); }
+
+  .sec-head {
+    display: flex; align-items: baseline; justify-content: space-between;
+    margin: 30px 0 12px; gap: 12px;
+  }
+  .sec-head h2 {
+    font-family: var(--f-display); font-weight: 600;
+    font-size: 19px; margin: 0; letter-spacing: -.01em;
+  }
+  .sec-head .note { font-size: 12px; color: var(--muted); }
+
+  .partners { display: flex; flex-direction: column; gap: 8px; }
+  .partner {
+    display: grid;
+    grid-template-columns: 1fr auto auto;
+    align-items: center;
+    gap: 10px;
+    background: var(--card);
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    padding: 11px 14px;
+  }
+  .partner .pname { font-weight: 600; min-width: 0; overflow-wrap: anywhere; }
+  .partner .pin { font-size: 12px; color: var(--muted); }
+  .partner .pshare { font-weight: 700; font-size: 15px; }
+  .partner .pshare.pos { color: var(--mint); }
+  .remove {
+    background: none; border: none; color: var(--muted);
+    cursor: pointer; font-size: 18px; line-height: 1; padding: 2px 4px;
+    border-radius: 6px;
+  }
+  .remove:hover { color: var(--berry); background: var(--chip); }
+
+  .add-row { display: flex; gap: 8px; margin-top: 10px; flex-wrap: wrap; }
+  .add-row input { flex: 1 1 140px; min-width: 0; }
+
+  input, select, textarea {
+    font: inherit; color: var(--ink);
+    background: var(--paper);
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    padding: 10px 12px;
+  }
+  input:focus, select:focus, textarea:focus {
+    outline: 2px solid var(--lemon); outline-offset: 1px; border-color: transparent;
+  }
+  label.fld { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: var(--muted); font-weight: 600; }
+
+  button.btn {
+    font: inherit; font-weight: 650;
+    border: none; border-radius: 10px;
+    padding: 10px 16px; cursor: pointer;
+    background: var(--ink); color: var(--paper);
+  }
+  button.btn:hover { opacity: .9; }
+  button.btn.lemon { background: var(--lemon-deep); color: #231c00; }
+  button.btn:disabled { opacity: .45; cursor: default; }
+
+  .entry-form {
+    background: var(--card); border: 1px solid var(--line);
+    border-radius: var(--radius); padding: 16px; box-shadow: var(--shadow);
+    display: grid; gap: 12px;
+  }
+  .entry-grid {
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+    gap: 10px;
+  }
+  .seg { display: inline-flex; background: var(--chip); border-radius: 10px; padding: 3px; gap: 2px; }
+  .seg button {
+    border: none; background: none; font: inherit; font-weight: 600;
+    padding: 7px 13px; border-radius: 8px; cursor: pointer; color: var(--muted);
+  }
+  .seg button[aria-pressed="true"] { background: var(--card); color: var(--ink); box-shadow: var(--shadow); }
+  .seg.kind button.sale[aria-pressed="true"] { color: var(--mint); }
+  .seg.kind button.expense[aria-pressed="true"] { color: var(--berry); }
+
+  .log { display: flex; flex-direction: column; gap: 1px; margin-top: 4px; }
+  .entry {
+    display: grid;
+    grid-template-columns: auto 1fr auto auto;
+    align-items: center; gap: 12px;
+    padding: 12px 6px;
+    border-bottom: 1px solid var(--line);
+  }
+  .entry:last-child { border-bottom: none; }
+  .badge {
+    width: 34px; height: 34px; border-radius: 9px; flex: none;
+    display: grid; place-items: center; font-size: 16px;
+  }
+  .badge.sale { background: color-mix(in srgb, var(--mint) 18%, transparent); }
+  .badge.expense { background: color-mix(in srgb, var(--berry) 18%, transparent); }
+  .entry .desc { min-width: 0; }
+  .entry .desc .d1 { font-weight: 600; overflow-wrap: anywhere; }
+  .entry .desc .d2 { font-size: 12px; color: var(--muted); display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  .pill {
+    font-size: 10.5px; font-weight: 650; letter-spacing: .04em; text-transform: uppercase;
+    padding: 2px 7px; border-radius: 20px; background: var(--chip); color: var(--muted);
+    display: inline-flex; align-items: center; gap: 4px;
+  }
+  .entry .amt { font-weight: 700; font-size: 15px; white-space: nowrap; }
+  .entry .amt.sale { color: var(--mint); }
+  .entry .amt.expense { color: var(--berry); }
+  .entry .del {
+    background: none; border: none; color: var(--muted); cursor: pointer;
+    font-size: 16px; padding: 4px 6px; border-radius: 6px;
+  }
+  .entry .del:hover { color: var(--berry); background: var(--chip); }
+
+  .empty {
+    text-align: center; color: var(--muted); padding: 34px 16px;
+    border: 1.5px dashed var(--line); border-radius: var(--radius);
+    font-size: 14px;
+  }
+  .empty strong { color: var(--ink); display: block; font-size: 15px; margin-bottom: 3px; }
+
+  .foot { margin-top: 32px; font-size: 12px; color: var(--muted); text-align: center; line-height: 1.6; }
+  .saving { font-size: 12px; color: var(--muted); min-height: 16px; }
+
+  @media (max-width: 440px) {
+    .entry { grid-template-columns: auto 1fr auto; }
+    .entry .del { grid-column: 3; grid-row: 1; justify-self: end; }
+    .entry .amt { grid-column: 2 / 4; justify-self: start; padding-left: 46px; }
+  }
+</style>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600&family=Inter:wght@400;600;650;700&display=swap">
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <p class="eyebrow">Cash box ledger</p>
+    <h1><span class="biz-name" id="bizName">The Refreshment Stand</span></h1>
+    <p class="tagline">Every sale and every cost, split fairly between the team.</p>
+  </header>
+
+  <div class="totals">
+    <div class="tile">
+      <p class="label"><span class="dot cash"></span>In the cash box</p>
+      <div class="val tnum" id="cashVal">$0.00</div>
+      <div class="sub">coins &amp; notes on hand</div>
+    </div>
+    <div class="tile">
+      <p class="label"><span class="dot digital"></span>In the bank (PayNow)</p>
+      <div class="val tnum" id="digVal">$0.00</div>
+      <div class="sub">held in the adult's account</div>
+    </div>
+    <div class="tile grand">
+      <p class="label">Profit so far</p>
+      <div class="val tnum" id="profitVal">$0.00</div>
+      <div class="sub" id="profitSub">sales minus costs, after startup money</div>
+    </div>
+    <div class="tile split">
+      <p class="label">Each person gets</p>
+      <div class="val tnum" id="eachVal">$0.00</div>
+      <div class="sub" id="eachSub">add some friends to split it</div>
+    </div>
+  </div>
+
+  <div class="sec-head">
+    <h2>The team</h2>
+    <span class="note">Each share = startup money back + equal split of profit</span>
+  </div>
+  <div class="partners" id="partners"></div>
+  <div class="add-row">
+    <input id="newName" placeholder="Add a friend's name" maxlength="24" aria-label="New partner name">
+    <input id="newIn" class="tnum" placeholder="Startup $ (0 ok)" inputmode="decimal" aria-label="Startup money" style="flex:0 1 130px">
+    <button class="btn" id="addPartner">Add</button>
+  </div>
+
+  <div class="sec-head">
+    <h2>Add to the ledger</h2>
+  </div>
+  <div class="entry-form">
+    <div class="seg kind" role="group" aria-label="Entry type">
+      <button type="button" class="sale" data-kind="sale" aria-pressed="true">＋ Sale</button>
+      <button type="button" class="expense" data-kind="expense" aria-pressed="false">－ Cost</button>
+    </div>
+    <div class="entry-grid">
+      <label class="fld">What was it?
+        <input id="eDesc" placeholder="e.g. 6 cups of lemonade" maxlength="48">
+      </label>
+      <label class="fld">Amount
+        <input id="eAmt" class="tnum" placeholder="0.00" inputmode="decimal">
+      </label>
+      <label class="fld">Paid how?
+        <select id="eMethod">
+          <option value="cash">Cash</option>
+          <option value="digital">PayNow / digital</option>
+        </select>
+      </label>
+    </div>
+    <div style="display:flex; justify-content:flex-end;">
+      <button class="btn lemon" id="addEntry">Record it</button>
+    </div>
+  </div>
+
+  <div class="sec-head">
+    <h2>History</h2>
+    <span class="note" id="countNote"></span>
+  </div>
+  <div id="logWrap"></div>
+
+  <p class="saving" id="saving">Loading…</p>
+
+  <p class="foot">
+    The money lives in one grown-up's hands — cash in the box, PayNow in their bank.<br>
+    This page just keeps the books so everyone can see it's fair.
+  </p>
+</div>
+
+<script>
+  // ---- State lives on the server, in data.json ----
+  let STATE = { biz: "The Refreshment Stand", partners: [], entries: [] };
+  let currentKind = "sale";
+  let saveTimer = null;
+  let typing = false;        // pause polling while a name is being typed
+  let lastSavedJSON = "";    // so polling only re-renders on real changes
+
+  const $ = id => document.getElementById(id);
+  const money = n => "$" + (Math.round(n * 100) / 100).toFixed(2);
+  const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+
+  function compute() {
+    let cash = 0, dig = 0, sales = 0, costs = 0, startup = 0;
+    for (const e of STATE.entries) {
+      const sign = e.kind === "sale" ? 1 : -1;
+      if (e.method === "cash") cash += sign * e.amt; else dig += sign * e.amt;
+      if (e.kind === "sale") sales += e.amt; else costs += e.amt;
+    }
+    for (const p of STATE.partners) startup += (p.startup || 0);
+    const profit = sales - costs - startup;
+    return { cash, dig, sales, costs, startup, profit };
+  }
+
+  function render() {
+    const c = compute();
+    $("bizName").textContent = STATE.biz;
+    $("cashVal").textContent = money(c.cash);
+    $("digVal").textContent = money(c.dig);
+    $("profitVal").textContent = money(c.profit);
+    $("profitSub").textContent = c.startup > 0
+      ? `after ${money(c.startup)} startup money is paid back`
+      : "sales minus costs";
+
+    const count = STATE.partners.length;
+    const perHead = c.profit / (count || 1);
+    $("eachVal").textContent = count ? money(perHead) : "$0.00";
+    $("eachSub").textContent = count
+      ? `profit split ${count} way${count !== 1 ? "s" : ""}` + (c.startup > 0 ? " · startup money paid back on top" : "")
+      : "add some friends to split it";
+
+    const pc = $("partners");
+    pc.innerHTML = "";
+    if (count === 0) {
+      const d = document.createElement("div");
+      d.className = "empty";
+      d.innerHTML = "<strong>No one added yet</strong>Add each friend below, with any money they chipped in to start.";
+      pc.appendChild(d);
+    } else {
+      for (const p of STATE.partners) {
+        const share = (p.startup || 0) + perHead;
+        const row = document.createElement("div");
+        row.className = "partner";
+        const name = document.createElement("div");
+        name.className = "pname"; name.textContent = p.name;
+        const sin = document.createElement("div");
+        sin.className = "pin";
+        sin.textContent = (p.startup || 0) > 0 ? "put in " + money(p.startup) : "put in $0";
+        const sh = document.createElement("div");
+        sh.className = "pshare" + (share >= 0 ? " pos" : "");
+        sh.textContent = money(share);
+        const rm = document.createElement("button");
+        rm.className = "remove"; rm.textContent = "×"; rm.title = "Remove " + p.name;
+        rm.onclick = () => { STATE.partners = STATE.partners.filter(x => x.id !== p.id); render(); queueSave(); };
+        row.append(name, sin, sh, rm);
+        pc.appendChild(row);
+      }
+    }
+
+    const lw = $("logWrap");
+    lw.innerHTML = "";
+    if (STATE.entries.length === 0) {
+      const d = document.createElement("div");
+      d.className = "empty";
+      d.innerHTML = "<strong>Nothing recorded yet</strong>When you make a sale or buy supplies, add it above and it'll show up here.";
+      lw.appendChild(d);
+      $("countNote").textContent = "";
+    } else {
+      const log = document.createElement("div");
+      log.className = "log";
+      const sorted = [...STATE.entries].sort((a, b) => b.ts - a.ts);
+      for (const e of sorted) {
+        const row = document.createElement("div");
+        row.className = "entry";
+        const badge = document.createElement("div");
+        badge.className = "badge " + e.kind;
+        badge.textContent = e.kind === "sale" ? "\u{1F964}" : "\u{1F9FE}";
+        const desc = document.createElement("div");
+        desc.className = "desc";
+        const d1 = document.createElement("div");
+        d1.className = "d1"; d1.textContent = e.desc || (e.kind === "sale" ? "Sale" : "Cost");
+        const d2 = document.createElement("div");
+        d2.className = "d2";
+        const pill = document.createElement("span");
+        pill.className = "pill";
+        pill.innerHTML = (e.method === "cash" ? '<span class="dot cash"></span>Cash' : '<span class="dot digital"></span>PayNow');
+        const when = document.createElement("span");
+        when.textContent = new Date(e.ts).toLocaleDateString(undefined, { month: "short", day: "numeric" });
+        d2.append(pill, when);
+        desc.append(d1, d2);
+        const amt = document.createElement("div");
+        amt.className = "amt " + e.kind;
+        amt.textContent = (e.kind === "sale" ? "+" : "−") + money(e.amt).slice(1);
+        const del = document.createElement("button");
+        del.className = "del"; del.textContent = "×"; del.title = "Delete";
+        del.onclick = () => { STATE.entries = STATE.entries.filter(x => x.id !== e.id); render(); queueSave(); };
+        row.append(badge, desc, amt, del);
+        log.appendChild(row);
+      }
+      lw.appendChild(log);
+      const s = STATE.entries.filter(e => e.kind === "sale").length;
+      const x = STATE.entries.filter(e => e.kind === "expense").length;
+      $("countNote").textContent = `${s} sale${s !== 1 ? "s" : ""} · ${x} cost${x !== 1 ? "s" : ""}`;
+    }
+  }
+
+  // ---- Talk to the server ----
+  async function loadFromServer() {
+    try {
+      const res = await fetch("/api/state", { cache: "no-store" });
+      if (!res.ok) throw new Error("bad response");
+      const data = await res.json();
+      STATE = {
+        biz: data.biz || "The Refreshment Stand",
+        partners: Array.isArray(data.partners) ? data.partners : [],
+        entries: Array.isArray(data.entries) ? data.entries : [],
+      };
+      lastSavedJSON = JSON.stringify(STATE);
+      render();
+      $("saving").textContent = "Saved on the server";
+    } catch (e) {
+      $("saving").textContent = "Couldn't reach the server — check your connection";
+    }
+  }
+
+  function queueSave() {
+    $("saving").textContent = "Saving…";
+    clearTimeout(saveTimer);
+    saveTimer = setTimeout(doSave, 500);
+  }
+
+  async function doSave() {
+    const payload = JSON.stringify(STATE);
+    try {
+      const res = await fetch("/api/state", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: payload,
+      });
+      if (!res.ok) throw new Error("save failed");
+      lastSavedJSON = payload;
+      $("saving").textContent = "Saved on the server";
+    } catch (e) {
+      $("saving").textContent = "Couldn't save — your change isn't stored yet";
+    }
+  }
+
+  // Gently pick up changes other people make. Skips while this person is
+  // typing a name or has an unsaved change in flight.
+  async function poll() {
+    if (typing || saveTimer) return;
+    try {
+      const res = await fetch("/api/state", { cache: "no-store" });
+      if (!res.ok) return;
+      const data = await res.json();
+      const incoming = JSON.stringify({
+        biz: data.biz || "The Refreshment Stand",
+        partners: Array.isArray(data.partners) ? data.partners : [],
+        entries: Array.isArray(data.entries) ? data.entries : [],
+      });
+      if (incoming !== lastSavedJSON) {
+        STATE = JSON.parse(incoming);
+        lastSavedJSON = incoming;
+        render();
+      }
+    } catch (e) { /* offline tick; try again next time */ }
+  }
+
+  // ---- Wire up ----
+  document.querySelectorAll(".seg.kind button").forEach(b => {
+    b.onclick = () => {
+      currentKind = b.dataset.kind;
+      document.querySelectorAll(".seg.kind button").forEach(x =>
+        x.setAttribute("aria-pressed", x === b ? "true" : "false"));
+      $("eDesc").placeholder = currentKind === "sale" ? "e.g. 6 cups of lemonade" : "e.g. cups & lemons from the shop";
+    };
+  });
+
+  $("newName").addEventListener("focus", () => { typing = true; });
+  $("newName").addEventListener("blur", () => { typing = false; });
+
+  $("addPartner").onclick = () => {
+    const nm = $("newName").value.trim();
+    if (!nm) { $("newName").focus(); return; }
+    const inRaw = parseFloat($("newIn").value);
+    const startup = isNaN(inRaw) || inRaw < 0 ? 0 : inRaw;
+    STATE.partners.push({ id: uid(), name: nm, startup });
+    $("newName").value = ""; $("newIn").value = "";
+    typing = false;
+    render(); queueSave();
+  };
+  $("newName").addEventListener("keydown", e => { if (e.key === "Enter") $("addPartner").click(); });
+  $("newIn").addEventListener("keydown", e => { if (e.key === "Enter") $("addPartner").click(); });
+
+  $("addEntry").onclick = () => {
+    const amt = parseFloat($("eAmt").value);
+    if (isNaN(amt) || amt <= 0) { $("eAmt").focus(); return; }
+    STATE.entries.push({
+      id: uid(), kind: currentKind,
+      desc: $("eDesc").value.trim(),
+      amt: Math.round(amt * 100) / 100,
+      method: $("eMethod").value,
+      ts: Date.now()
+    });
+    $("eDesc").value = ""; $("eAmt").value = "";
+    render(); queueSave();
+    $("eDesc").focus();
+  };
+  $("eAmt").addEventListener("keydown", e => { if (e.key === "Enter") $("addEntry").click(); });
+
+  render();
+  loadFromServer();
+  setInterval(poll, 4000);
+</script>
+</body>
+</html>
