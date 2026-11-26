@@ -22,19 +22,9 @@ function seedState() {
 }
 
 // ---- Team PIN ----
-// Anyone must send this to read or change the ledger. For a public GitHub repo
-// this default is visible in the code — to keep it secret, set an APP_PIN
-// environment variable in Render (it wins over this default).
-const PIN = process.env.APP_PIN || "mrmrefreshments123!";
+// Anyone must send this to read or change the ledger.
+const PIN = "mrm-refreshments123!";
 
-function checkPin(req, res) {
-  const given = req.get("x-stand-pin") || "";
-  if (given !== PIN) {
-    res.status(401).json({ ok: false, error: "pin" });
-    return false;
-  }
-  return true;
-}
 
 // ---- Storage ----
 const DATABASE_URL = process.env.DATABASE_URL;
